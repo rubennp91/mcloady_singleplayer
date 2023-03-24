@@ -5,6 +5,16 @@ from time import sleep
 from datetime import timedelta
 
 
+def send_cmd(cmd):
+    for i in cmd:
+        keyboard.press_and_release('t')
+        sleep(0.1)
+        keyboard.write(i)
+        sleep(0.1)
+        keyboard.press_and_release('enter')
+        sleep(0.1)
+
+
 def send_tp(x, y, z, a, b):
     """
     Send the telepor command using mcr. 'x', 'y' 'z'
@@ -23,15 +33,19 @@ def generate_node(x, y, z, first_wait, second_wait):
     """
     Generate a node using the coordinates and angles. Take in the
     Minecraft RCON object, the coordinates, the primary and secondary
-    wait times.
+    wait times, and the player object.
+    The 5th parameter is the x-rotation angle (-90 = east, 0=south, 90=west...)
+    The 6th parameter is the y-rotation angle, ie the vertical angle :
+        -90.0 for straight up to 90.0 for straight down
+    (see : https://gaming.stackexchange.com/a/200797)
     """
-    send_tp(x, y, z, -90, 20)
+    send_cmd([" ".join([str(i) for i in ["/tp @p", x, y, z, 0, 20]])])
     sleep(first_wait)
-    send_tp(x, y, z, 0, 20)
+    send_cmd([" ".join([str(i) for i in ["/tp @p", x, y, z, -90, 20]])])
     sleep(second_wait)
-    send_tp(x, y, z, 90, 20)
+    send_cmd([" ".join([str(i) for i in ["/tp @p", x, y, z, 180, 20]])])
     sleep(second_wait)
-    send_tp(x, y, z, 180, 20)
+    send_cmd([" ".join([str(i) for i in ["/tp @p", x, y, z, 90, 20]])])
     sleep(second_wait)
 
 
@@ -45,7 +59,6 @@ def read_last_tp(config):
     """
     save_file = config['FILE']['last_tp']
     if not os.path.isfile(save_file):
-        altitude = config['PARAMETERS']['altitude']
         # X, Z, dX, dZ, start_i
         last_tp = [0, 0, 0, -1, 0]
         with open(save_file, 'w') as f:
@@ -73,11 +86,28 @@ def calculate_time_remaining(i, normalized_nodes, first_wait, second_wait):
     return str(timedelta(seconds=total_time_remaining))
 
 
+def set_gamerules(end=False):
+    """
+    Function used to set gamerules that could change the world
+    when loaded. Stopped at the beginning, started at the end.
+    """
+    if end:
+        cmds = ["/gamerule doDaylightCycle true",
+                "/gamerule doWeatherCycle true",
+                "/gamerule doFireTick true"]
+    else:
+        cmds = ["/gamerule doDaylightCycle false",
+                "/gamerule doWeatherCycle false",
+                "/gamerule doFireTick false"]
+
+    return send_cmd(cmds)
+
+
 def main(config):
     """
-    The main function reads the parameters from the config file.
-    It also calls the tp function using the spiral algorithm
-    as well as saves the last tp position.
+    The main function is used to read config, start
+    up the MCRcon connection as well as to iterate
+    between all the positions and save those to a file.
     """
     last_tp, save_file = read_last_tp(config)
 
@@ -85,17 +115,28 @@ def main(config):
           "computer while the program is executing. It is recommended that "
           "you unplug your keyboard and mouse once the program has started. "
           "If you wish to stop the program, return to the terminal and press "
-          "'Del'.")
+          "'Ctrl + c'.")
 
     input("Press enter to start...")
-    print("Starting in 5 seconds...")
-    sleep(5)
+    print("Please place the focus of your system into the minecraft world \n "
+          "Starting in 10 seconds...")
+    sleep(10)
 
     radius = int(config['PARAMETERS']['radius'])
     increments = int(config['PARAMETERS']['increments'])
     y = int(config['PARAMETERS']['altitude'])
     first_wait = int(config['PARAMETERS']['first_wait'])
     second_wait = int(config['PARAMETERS']['second_wait'])
+    gamerules = config['PARAMETERS']['gamerules']
+    x_center = config['PARAMETERS']['x_center']
+    z_center = config['PARAMETERS']['z_center']
+
+    # Set gamerules if activated in the parameters
+    if gamerules:
+        set_gamerules()
+
+    # Set player in spectator mode just in case
+    send_cmd(["/gamemode spectator @p"])
 
     # Load last saved tp coordinates, next increment, and current iteration.
     x = int(last_tp[0])
@@ -114,8 +155,8 @@ def main(config):
     while iterator < normalized_nodes:
         if (-normalized_radius <= x <= normalized_radius) and \
            (-normalized_radius <= z <= normalized_radius):
-            actual_x = int(x * increments)
-            actual_z = int(z * increments)
+            actual_x = int(x * increments) + int(x_center)
+            actual_z = int(z * increments) + int(z_center)
             generate_node(actual_x,
                           y,
                           actual_z,
@@ -132,8 +173,11 @@ def main(config):
                                                       first_wait,
                                                       second_wait)
 
-            print("Player teleported to position:", str(actual_x), str(y), str(actual_z))
-            print("Player teleported to normalized position:", x, str(y), z)
+            print("Player teleported to position:",
+                  str(actual_x),
+                  str(y),
+                  str(actual_z))
+            print("Player teleported to normalized position:", x, z)
             print("{0}/{1} nodes completed. {2} left."
                   .format(iterator, normalized_nodes,
                           (normalized_nodes - iterator)))
@@ -146,10 +190,20 @@ def main(config):
 
         iterator += 1
 
+    # Unset gamerules
+    if gamerules:
+        set_gamerules(True)
+
     print("All finished!")
 
 
 if __name__ == '__main__':
     config = configparser.ConfigParser()
     config.read("config.ini")
-    main(config)
+
+    try:
+        main(config)
+    # Exit if Ctrl+C or Del is pressed
+    except KeyboardInterrupt:
+        print("\nExiting...")
+        exit(0)
