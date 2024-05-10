@@ -5,6 +5,10 @@ from time import sleep
 from datetime import timedelta
 
 
+def str2bool(v):
+  return v.lower() in ("yes", "true", "t", "1")
+
+
 def send_cmd(cmd):
     for i in cmd:
         keyboard.press_and_release('t')
@@ -29,7 +33,7 @@ def send_tp(x, y, z, a, b):
     keyboard.press_and_release('enter')
 
 
-def generate_node(x, y, z, first_wait, second_wait):
+def generate_node(x, y, z, first_wait, second_wait, angles):
     """
     Generate a node using the coordinates and angles. Take in the
     Minecraft RCON object, the coordinates, the primary and secondary
@@ -39,14 +43,19 @@ def generate_node(x, y, z, first_wait, second_wait):
         -90.0 for straight up to 90.0 for straight down
     (see : https://gaming.stackexchange.com/a/200797)
     """
-    send_cmd([" ".join([str(i) for i in ["/tp @p", x, y, z, 0, 20]])])
-    sleep(first_wait)
-    send_cmd([" ".join([str(i) for i in ["/tp @p", x, y, z, -90, 20]])])
-    sleep(second_wait)
-    send_cmd([" ".join([str(i) for i in ["/tp @p", x, y, z, 180, 20]])])
-    sleep(second_wait)
-    send_cmd([" ".join([str(i) for i in ["/tp @p", x, y, z, 90, 20]])])
-    sleep(second_wait)
+    
+    if angles:
+        send_cmd([" ".join([str(i) for i in ["/tp @p", x, y, z, 0, 20]])])
+        sleep(first_wait)
+        send_cmd([" ".join([str(i) for i in ["/tp @p", x, y, z, -90, 20]])])
+        sleep(second_wait)
+        send_cmd([" ".join([str(i) for i in ["/tp @p", x, y, z, 180, 20]])])
+        sleep(second_wait)
+        send_cmd([" ".join([str(i) for i in ["/tp @p", x, y, z, 90, 20]])])
+        sleep(second_wait)
+    else:
+        send_cmd([" ".join([str(i) for i in ["/tp @p", x, y, z]])])
+        sleep(first_wait+(second_wait*3))
 
 
 def read_last_tp(config):
@@ -127,16 +136,22 @@ def main(config):
     y = int(config['PARAMETERS']['altitude'])
     first_wait = int(config['PARAMETERS']['first_wait'])
     second_wait = int(config['PARAMETERS']['second_wait'])
-    gamerules = config['PARAMETERS']['gamerules']
+    gamerules = str2bool(config['PARAMETERS']['gamerules'])
     x_center = config['PARAMETERS']['x_center']
     z_center = config['PARAMETERS']['z_center']
+    creative_true = str2bool(config['PARAMETERS']['creative'])
+    angles = str2bool(config['PARAMETERS']['angle'])
 
     # Set gamerules if activated in the parameters
     if gamerules:
         set_gamerules()
 
     # Set player in spectator mode just in case
-    send_cmd(["/gamemode spectator @p"])
+    if creative_true:
+        creative = "creative"
+    else:
+        creative = "spectator"
+    send_cmd(["/gamemode " + creative + " @p"])
 
     # Load last saved tp coordinates, next increment, and current iteration.
     x = int(last_tp[0])
@@ -162,6 +177,7 @@ def main(config):
                           actual_z,
                           first_wait,
                           second_wait,
+                          angles
                           )
 
             with open(save_file, 'w') as f:
